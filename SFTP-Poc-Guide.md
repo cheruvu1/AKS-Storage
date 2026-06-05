@@ -47,7 +47,7 @@ az group create \
 
 ---
 
-## Step 2 — Create Storage Account
+## Step 2 — Create Storage Account with HNS + SFTP Enabled
 
 > **Important:** `--allow-shared-key-access` is intentionally omitted.
 > SSH key authentication does not require shared key access.
