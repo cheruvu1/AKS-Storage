@@ -388,7 +388,7 @@ sftp $STORAGE_ACCOUNT.$SFTP_USER_B@$STORAGE_ACCOUNT.blob.core.windows.net`
 
 bash
 
-# Create a subfolder inside userA-home
+### Create a subfolder inside userA-home
 
 ```jsx
 
@@ -400,7 +400,7 @@ az storage fs directory create \
   
 ```
 
-# Verify ACLs inherited automatically - no manual set needed
+### Verify ACLs inherited automatically - no manual set needed
 
 ```jsx
 
@@ -413,8 +413,8 @@ az storage fs access show \
 
 ```
 
-# Should show user:$USER_A_OID:rwx and user:$USER_B_OID:---
-# without you having manually set them - proving inheritance works`
+### Should show user:$USER_A_OID:rwx and user:$USER_B_OID:---
+### without you having manually set them - proving inheritance works`
 
 ---
 
