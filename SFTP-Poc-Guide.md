@@ -20,10 +20,12 @@ STORAGE_ACCOUNT="stsftpprodbc001"         # must be globally unique, lowercase
 CONTAINER="sftpcontainer"
 SFTP_USER_A="sftpusera"
 SFTP_USER_B="sftpuserb"
-```
+
 
 az account show --query "{SubscriptionID:id, Name:name}" -o json
- 
+
+```
+
 ---
 
 ### Step 1 — Create Resource Group
