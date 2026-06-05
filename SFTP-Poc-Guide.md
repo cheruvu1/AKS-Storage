@@ -1,5 +1,5 @@
 # Azure SFTP POC — Full Setup Guide
-### HNS + SFTP + ACL Isolation with SSH Key Authentication
+### HNS(Hierarchical Namespace) + SFTP + ACL Isolation with SSH Key Authentication
  
 ### Prerequisites
 
