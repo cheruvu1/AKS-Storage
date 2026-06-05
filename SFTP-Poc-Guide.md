@@ -1,58 +1,54 @@
 # Azure SFTP POC — Full Setup Guide
 ### HNS + SFTP + ACL Isolation with SSH Key Authentication
+ 
+### Prerequisites
 
----
+bash
 
-## Prerequisites
+```jsx
 
-Before starting, ensure you have:
-- Azure CLI installed and logged in (`az login`)
-- `sshpass` installed (`brew install sshpass`)
-- Access to an Azure subscription
+az cloud set --name AzureUSGovernment
+Az account list
+az login 
 
----
-
-## Variables — Set These First
-
-```bash
-SUB_ID=$(az account show --query id -o tsv)
-MY_USER=$(az ad signed-in-user show --query id -o tsv)
+ 
+## GOV
+# Set all variables first
 RESOURCE_GROUP="rg-sftp-poc"
-STORAGE_ACCOUNT="stsftpprod001"
-CONTAINER="sftpcontainer"
 LOCATION="USGovTexas"
+STORAGE_ACCOUNT="stsftpprodbc001"         # must be globally unique, lowercase
+CONTAINER="sftpcontainer"
 SFTP_USER_A="sftpusera"
 SFTP_USER_B="sftpuserb"
-
-echo "================================================"
-echo "Subscription  : $SUB_ID"
-echo "Resource Group: $RESOURCE_GROUP"
-echo "Storage Acct  : $STORAGE_ACCOUNT"
-echo "My User ID    : $MY_USER"
-echo "================================================"
 ```
 
+az account show --query "{SubscriptionID:id, Name:name}" -o json
+ 
 ---
 
-## Step 1 — Create Resource Group
+### Step 1 — Create Resource Group
 
-```bash
+bash
+
+```jsx
+bash
+
 az group create \
   --name $RESOURCE_GROUP \
-  --location $LOCATION \
-  --query "properties.provisioningState" \
-  -o tsv
-# Expected: Succeeded
+  --location $LOCATION
+
+# Verify
+az group show --name $RESOURCE_GROUP --query "properties.provisioningState"
+# Expected: "Succeeded"`
 ```
 
 ---
 
-## Step 2 — Create Storage Account with HNS + SFTP Enabled
+### Step 2 — Create Storage Account with HNS + SFTP Enabled
 
-> **Important:** `--allow-shared-key-access` is intentionally omitted.
-> SSH key authentication does not require shared key access.
+bash
 
-```bash
+```jsx
 az storage account create \
   --name $STORAGE_ACCOUNT \
   --resource-group $RESOURCE_GROUP \
@@ -61,108 +57,102 @@ az storage account create \
   --kind StorageV2 \
   --enable-hierarchical-namespace true \
   --enable-sftp true \
-  --enable-local-user true \
   --allow-blob-public-access false \
   --min-tls-version TLS1_2
-```
 
-### Verify All Settings
-
-```bash
+# Verify HNS and SFTP are both enabled
 az storage account show \
   --name $STORAGE_ACCOUNT \
   --resource-group $RESOURCE_GROUP \
-  --query "{HNS:isHnsEnabled, SFTP:isSftpEnabled, LocalUser:isLocalUserEnabled}" \
+  --query "{HNS:isHnsEnabled, SFTP:isSftpEnabled}" \
   -o json
-```
 
-**Expected:**
-```json
-{
-  "HNS": true,
-  "SFTP": true,
-  "LocalUser": true
-}
+# Expected:
+# {
+#   "HNS": true,
+#   "SFTP": true
+# }
 ```
 
 ---
 
-## Step 3 — Assign Storage Blob Data Owner Role
+### Step 3 — Create the Blob Container
 
-> Required for ACL management (POSIX permissions on directories).
-> `Storage Blob Data Contributor` is not sufficient — it cannot set ACLs.
+bash
 
-```bash
-az role assignment create \
-  --assignee $MY_USER \
-  --role "Storage Blob Data Owner" \
-  --scope $(az storage account show \
-    --name $STORAGE_ACCOUNT \
-    --resource-group $RESOURCE_GROUP \
-    --query id -o tsv)
-
-echo "Waiting 3 minutes for role propagation..."
-sleep 180
-echo "Done"
-```
-
-### Verify Role Assignment
-
-```bash
-az role assignment list \
-  --assignee $MY_USER \
-  --scope $(az storage account show \
-    --name $STORAGE_ACCOUNT \
-    --resource-group $RESOURCE_GROUP \
-    --query id -o tsv) \
-  --query "[].{Role:roleDefinitionName}" \
-  -o table
-# Expected: Storage Blob Data Owner
-```
-
----
-
-## Step 4 — Create Container and Home Directories
-
-```bash
-# Create container
-az storage fs create \
-  --name $CONTAINER \
-  --account-name $STORAGE_ACCOUNT \
-  --auth-mode login
-
-# Create home directory for User A
+```jsx
 az storage fs directory create \
   --name "userA-home" \
   --file-system $CONTAINER \
   --account-name $STORAGE_ACCOUNT \
   --auth-mode login
+ 
 
-# Create home directory for User B
+# Verify
+
+az storage fs show \
+  --name $CONTAINER \
+  --account-name $STORAGE_ACCOUNT \
+  --auth-mode login \
+  --query "name"
+  
+# Output
+
+"sftpcontainer"
+
+```
+
+---
+
+### Step 4 — Create Home Directories for Each User
+
+bash
+
+```jsx
+**## Create userA-home directory** 
+
+az storage fs directory create \
+  --name "userA-home" \
+  --file-system $CONTAINER \
+  --account-name $STORAGE_ACCOUNT \
+  --auth-mode login
+  
+
+```
+
+```jsx
+**## Create userB-home directory** 
+
 az storage fs directory create \
   --name "userB-home" \
   --file-system $CONTAINER \
   --account-name $STORAGE_ACCOUNT \
   --auth-mode login
+
+
+ 
 ```
 
-### Verify Directories
+```jsx
+**# Verify both exist**
 
-```bash
 az storage fs directory list \
   --file-system $CONTAINER \
   --account-name $STORAGE_ACCOUNT \
   --auth-mode login \
   -o table
-# Expected: userA-home and userB-home listed
+  
 ```
 
 ---
 
-## Step 5 — Create SFTP Local Users
+### Step 5 — Create SFTP Local Users
 
-```bash
-# Create User A — scoped to userA-home
+bash
+
+```jsx
+**# Create User A - scoped to their home directory**
+
 az storage account local-user create \
   --account-name $STORAGE_ACCOUNT \
   --resource-group $RESOURCE_GROUP \
@@ -174,7 +164,11 @@ az storage account local-user create \
     service=blob \
     resource-name="$CONTAINER"
 
-# Create User B — scoped to userB-home
+```
+
+```jsx
+**# Create User B - resource-name is CONTAINER only**
+
 az storage account local-user create \
   --account-name $STORAGE_ACCOUNT \
   --resource-group $RESOURCE_GROUP \
@@ -185,84 +179,47 @@ az storage account local-user create \
     permissions=rcwdl \
     service=blob \
     resource-name="$CONTAINER"
+
 ```
-
-### Verify Users Created
-
-```bash
-az storage account local-user list \
-  --account-name $STORAGE_ACCOUNT \
-  --resource-group $RESOURCE_GROUP \
-  --query "[].{Name:name, HomeDir:homeDirectory, HasPassword:hasSshPassword}" \
-  -o table
-```
-
-**Expected:**
-
-| Name      | HomeDir                      | HasPassword |
-|-----------|------------------------------|-------------|
-| sftpusera | sftpcontainer/userA-home     | True        |
-| sftpuserb | sftpcontainer/userB-home     | True        |
-
-> **Permission scope values explained:**
-> | Letter | Meaning |
-> |--------|---------|
-> | `r` | Read / Download files |
-> | `c` | Create / Upload new files |
-> | `w` | Write / Overwrite files |
-> | `d` | Delete files |
-> | `l` | List directory contents |
 
 ---
 
-## Step 6 — Generate SSH Key and Attach to Users
+### Step 6 — Generate and Save Passwords
 
-```bash
-# Generate dedicated SSH key pair for this POC
-ssh-keygen -t ecdsa -b 256 \
-  -f ~/.ssh/sftp_poc_key \
-  -N "" \
-  -C "sftp-poc-test"
+bash
 
-# View the public key
-cat ~/.ssh/sftp_poc_key.pub
-```
-
-### Attach SSH Key to User A
-
-```bash
-az storage account local-user update \
+```jsx
+**# Generate password for User A**
+az storage account local-user regenerate-password \
   --account-name $STORAGE_ACCOUNT \
   --resource-group $RESOURCE_GROUP \
   --name $SFTP_USER_A \
-  --ssh-authorized-key key="$(cat ~/.ssh/sftp_poc_key.pub)"
-```
+  --query "sshPassword" \
+  -o tsv
+# SAVE THIS OUTPUT - shown only once  
 
-### Attach SSH Key to User B
 
-```bash
-az storage account local-user update \
+**# Generate password for User B**
+az storage account local-user regenerate-password \
   --account-name $STORAGE_ACCOUNT \
   --resource-group $RESOURCE_GROUP \
   --name $SFTP_USER_B \
-  --ssh-authorized-key key="$(cat ~/.ssh/sftp_poc_key.pub)"
-```
+  --query "sshPassword" \
+  -o tsv
 
-### Verify Keys Attached
+# SAVE THIS OUTPUT - shown only once  
 
-```bash
-az storage account local-user list \
-  --account-name $STORAGE_ACCOUNT \
-  --resource-group $RESOURCE_GROUP \
-  --query "[].{Name:name, SSHKeys:sshAuthorizedKeys}" \
-  -o json
 ```
 
 ---
 
-## Step 7 — Get User SIDs for ACL Assignment
+### Step 7 — Get User Object IDs for ACL Assignment
 
-```bash
+bash
+
+```jsx
+**# Get the SID (used as OID for local SFTP users in ACLs)**
+
 USER_A_OID=$(az storage account local-user show \
   --account-name $STORAGE_ACCOUNT \
   --resource-group $RESOURCE_GROUP \
@@ -276,40 +233,53 @@ USER_B_OID=$(az storage account local-user show \
   --query "sid" -o tsv)
 
 echo "User A SID: $USER_A_OID"
+ 
 echo "User B SID: $USER_B_OID"
+ 
 ```
 
 ---
 
-## Step 8 — Prove the Problem Exists (Before Fix)
+### Step 8 — Prove the Problem Exists (Before Fix)
 
-Connect as User A and verify they can see and enter User B's directory — this is the security gap we are fixing.
+bash
 
-```bash
-sftp \
-  -i ~/.ssh/sftp_poc_key \
-  -o IdentitiesOnly=yes \
-  -o PubkeyAuthentication=yes \
-  -o PreferredAuthentications=publickey \
-  -o StrictHostKeyChecking=no \
-  $STORAGE_ACCOUNT.$SFTP_USER_A@$STORAGE_ACCOUNT.blob.core.windows.net
-```
+```jsx
+**# Check root ACL - note permissive or absent user entries**
 
-Once connected, run these SFTP commands:
+az storage fs access show \
+  --path "/" \
+  --file-system $CONTAINER \
+  --account-name $STORAGE_ACCOUNT \
+  --auth-mode login
+  
+**# Output**
 
-```
-sftp> ls /             # Can see everything — THIS IS THE BUG
-sftp> cd userB-home    # Can enter — THIS SHOULD FAIL
-sftp> exit
+{
+  "acl": "user::rwx,group::r-x,other::---",
+  "group": "8d092d1e-c31c-470b-b589-b20da7a2d5c1",
+  "owner": "8d092d1e-c31c-470b-b589-b20da7a2d5c1",
+  "permissions": "rwxr-x---"
+}
+
+**# Now SFTP in as User A and try to browse into userB-home
+
+ 
+
+sftp $STORAGE_ACCOUNT.$SFTP_USER_A@$STORAGE_ACCOUNT.blob.core.windows.net
+# > ls /          (can see everything - this is the bug)
+# > cd userB-home (should fail but currently succeeds)
 ```
 
 ---
 
-## Step 9 — Apply ACL Fix
+### Step 9 — Apply the ACL Fix
 
-### Root Directory — Traverse Only (Cannot List)
+bash
 
-```bash
+# Root: traverse only for both users - cannot list, cannot read
+
+```jsx
 az storage fs access set \
   --acl "user:$USER_A_OID:--x,user:$USER_B_OID:--x" \
   --path "/" \
@@ -318,113 +288,117 @@ az storage fs access set \
   --auth-mode login
 ```
 
-### User A Home — Full Access for A, None for B
+# User A home: full access for A, none for B
 
-```bash
+```jsx
 az storage fs access set \
   --acl "user:$USER_A_OID:rwx,default:user:$USER_A_OID:rwx,user:$USER_B_OID:---,default:user:$USER_B_OID:---" \
   --path "/userA-home" \
   --file-system $CONTAINER \
   --account-name $STORAGE_ACCOUNT \
   --auth-mode login
+
 ```
+# User B home: full access for B, none for A
 
-### User B Home — Full Access for B, None for A
-
-```bash
+```jsx
 az storage fs access set \
   --acl "user:$USER_B_OID:rwx,default:user:$USER_B_OID:rwx,user:$USER_A_OID:---,default:user:$USER_A_OID:---" \
   --path "/userB-home" \
   --file-system $CONTAINER \
   --account-name $STORAGE_ACCOUNT \
-  --auth-mode login
-```
+  --auth-mode login`
 
+```
 ---
 
-## Step 10 — Verify ACLs Applied Correctly
+### Step 10 — Verify ACLs Applied Correctly
 
-```bash
-echo "=== ROOT ACL ==="
-az storage fs access show \
-  --path "/" \
-  --file-system $CONTAINER \
-  --account-name $STORAGE_ACCOUNT \
-  --auth-mode login \
-  --query "acl"
+bash
 
+```jsx
+echo "=== ROOT ACL ===" 
+az storage fs access show --path "/" \
+  --file-system $CONTAINER --account-name $STORAGE_ACCOUNT \
+  --auth-mode login --query "acl"
+
+```
+
+```jsx
 echo "=== USER A HOME ACL ==="
-az storage fs access show \
-  --path "/userA-home" \
-  --file-system $CONTAINER \
-  --account-name $STORAGE_ACCOUNT \
-  --auth-mode login \
-  --query "acl"
+az storage fs access show --path "/userA-home" \
+  --file-system $CONTAINER --account-name $STORAGE_ACCOUNT \
+  --auth-mode login --query "acl"
 
+```
+```jsx
 echo "=== USER B HOME ACL ==="
-az storage fs access show \
-  --path "/userB-home" \
-  --file-system $CONTAINER \
-  --account-name $STORAGE_ACCOUNT \
-  --auth-mode login \
-  --query "acl"
+az storage fs access show --path "/userB-home" \
+  --file-system $CONTAINER --account-name $STORAGE_ACCOUNT \
+  --auth-mode login --query "acl"`
+
 ```
+---
+
+### Step 11 — Validate the Fix via SFTP
+
+bash 
+# Test as User A
+
+```jsx
+
+sftp $STORAGE_ACCOUNT.$SFTP_USER_A@$STORAGE_ACCOUNT.blob.core.windows.net`
+
+```
+
+| Command in SFTP | Expected Result |
+| --- | --- |
+| `ls /` | ❌ Permission denied |
+| `cd userA-home` | ✅ Success |
+| `ls userA-home` | ✅ Lists contents |
+| `cd userB-home` | ❌ Permission denied |
+
+
+bash
+
+
+# Test as User B
+
+```jsx
+
+sftp $STORAGE_ACCOUNT.$SFTP_USER_B@$STORAGE_ACCOUNT.blob.core.windows.net`
+
+```
+
+| Command in SFTP | Expected Result |
+| --- | --- |
+| `ls /` | ❌ Permission denied |
+| `cd userB-home` | ✅ Success |
+| `ls userB-home` | ✅ Lists contents |
+| `cd userA-home` | ❌ Permission denied |
 
 ---
 
-## Step 11 — Validate the Fix via SFTP
+### Step 12 — Test Default ACL Inheritance
 
-### Test as User A
+bash
 
-```bash
-sftp \
-  -i ~/.ssh/sftp_poc_key \
-  -o IdentitiesOnly=yes \
-  -o PubkeyAuthentication=yes \
-  -o PreferredAuthentications=publickey \
-  -o StrictHostKeyChecking=no \
-  $STORAGE_ACCOUNT.$SFTP_USER_A@$STORAGE_ACCOUNT.blob.core.windows.net
-```
-
-| SFTP Command      | Expected Result          |
-|-------------------|--------------------------|
-| `ls /`            | ❌ Permission denied      |
-| `cd userA-home`   | ✅ Success                |
-| `ls userA-home`   | ✅ Lists contents         |
-| `cd userB-home`   | ❌ Permission denied      |
-
-### Test as User B
-
-```bash
-sftp \
-  -i ~/.ssh/sftp_poc_key \
-  -o IdentitiesOnly=yes \
-  -o PubkeyAuthentication=yes \
-  -o PreferredAuthentications=publickey \
-  -o StrictHostKeyChecking=no \
-  $STORAGE_ACCOUNT.$SFTP_USER_B@$STORAGE_ACCOUNT.blob.core.windows.net
-```
-
-| SFTP Command      | Expected Result          |
-|-------------------|--------------------------|
-| `ls /`            | ❌ Permission denied      |
-| `cd userB-home`   | ✅ Success                |
-| `ls userB-home`   | ✅ Lists contents         |
-| `cd userA-home`   | ❌ Permission denied      |
-
----
-
-## Step 12 — Test Default ACL Inheritance
-
-```bash
 # Create a subfolder inside userA-home
+
+```jsx
+
 az storage fs directory create \
   --name "userA-home/new-subfolder" \
   --file-system $CONTAINER \
   --account-name $STORAGE_ACCOUNT \
   --auth-mode login
+  
+```
 
-# Verify ACLs inherited automatically
+# Verify ACLs inherited automatically - no manual set needed
+
+```jsx
+
 az storage fs access show \
   --path "/userA-home/new-subfolder" \
   --file-system $CONTAINER \
@@ -432,124 +406,26 @@ az storage fs access show \
   --auth-mode login \
   --query "acl"
 
+```
+
 # Should show user:$USER_A_OID:rwx and user:$USER_B_OID:---
-# without manually setting them — proving inheritance works
-```
+# without you having manually set them - proving inheritance works`
 
 ---
 
-## ACL Permission Reference
+### Cleanup (After POC)
 
-| Permission | On Files | On Directories |
-|------------|----------|----------------|
-| `r` (Read) | Read file contents | List directory contents |
-| `w` (Write) | Modify file | Create/delete in directory |
-| `x` (Execute) | Run file | **Traverse/enter directory** |
-| `---` | No access | No access |
-| `--x` | — | Traverse only, cannot list |
-| `rwx` | Full access | Full access |
+bash
 
----
+```jsx
 
-## Directory Structure After Fix
-
-```
-/ (root)
-├── ACL: user:sftpusera:--x    ← traverse only
-├── ACL: user:sftpuserb:--x    ← traverse only
-│
-├── /userA-home/
-│   ├── ACL: user:sftpusera:rwx   ← full access
-│   └── ACL: user:sftpuserb:---   ← no access
-│
-└── /userB-home/
-    ├── ACL: user:sftpusera:---   ← no access
-    └── ACL: user:sftpuserb:rwx   ← full access
-```
-
----
-
-## Key Concepts
-
-### Why HNS is Required
-| Capability | Without HNS | With HNS |
-|------------|-------------|----------|
-| POSIX ACLs | ❌ | ✅ |
-| Real directory permissions | ❌ | ✅ |
-| Execute (X) bit on folders | ❌ | ✅ |
-| SFTP support | ❌ | ✅ |
-
-### Why Execute (X) on Root Matters
-Without `--x` on the root directory, users can traverse the entire file system tree even if they cannot read files. The fix applies:
-- `--x` on root and sibling directories → can traverse to reach home folder, cannot list
-- `rwx` on home directory → full access within their own space
-- `---` on other user directories → completely blocked
-
-### Why SSH Key Auth (vs Password)
-| Auth Method | Shared Key Required | Security |
-|-------------|--------------------|---------:|
-| Password | ✅ Yes | Medium |
-| SSH Key | ❌ No | High |
-
-SSH key authentication bypasses the `allowSharedKeyAccess` requirement, making it compatible with NIST SP 800-53 Rev. 5 and similar compliance policies.
-
----
-
-## Troubleshooting
-
-### Common Errors
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `KeyBasedAuthenticationNotPermitted` | Shared key disabled | Add `--auth-mode login` to all storage commands |
-| `FilesystemNotFound` | Container not created | Run Step 4 |
-| `InvalidRequestPropertyValue` on resourceName | Path included in resource-name | Use container name only, not `container/path` |
-| `allowSharedKeyAccess: false` after update | NIST/CIS policy at tenant level | Use SSH key auth instead of password |
-| SSH disconnect after password sent | Shared key policy blocking auth | Switch to SSH key authentication |
-
-### Useful Diagnostic Commands
-
-```bash
-# Check all storage account settings
-az storage account show \
-  --name $STORAGE_ACCOUNT \
-  --resource-group $RESOURCE_GROUP \
-  --query "{HNS:isHnsEnabled, SFTP:isSftpEnabled, LocalUser:isLocalUserEnabled, SharedKey:allowSharedKeyAccess}" \
-  -o json
-
-# Check local user state
-az storage account local-user show \
-  --account-name $STORAGE_ACCOUNT \
-  --resource-group $RESOURCE_GROUP \
-  --name $SFTP_USER_A \
-  --query "{name:name, hasSshPassword:hasSshPassword, homeDirectory:homeDirectory, sid:sid}" \
-  -o json
-
-# Check blocking policies
-az policy state list \
-  --resource $(az storage account show \
-    --name $STORAGE_ACCOUNT \
-    --resource-group $RESOURCE_GROUP \
-    --query "id" -o tsv) \
-  --query "[?policyDefinitionAction=='deny'].{Policy:policyDefinitionName, Action:policyDefinitionAction}" \
-  -o table
-```
-
----
-
-## Cleanup
-
-```bash
-az group delete \
+`az group delete \
   --name $RESOURCE_GROUP \
-  --yes --no-wait
+  --yes --no-wait`
 
-# Remove SSH key pair
-rm ~/.ssh/sftp_poc_key
-rm ~/.ssh/sftp_poc_key.pub
 ```
 
----
+
 
 *Guide covers Azure SFTP + HNS + POSIX ACL isolation POC*
 *Tested on macOS with Azure CLI 2.76.0+*
