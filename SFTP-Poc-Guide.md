@@ -152,8 +152,10 @@ az storage fs directory list \
 
 bash
 
-```jsx
 **# Create User A - scoped to their home directory**
+
+
+```jsx
 
 az storage account local-user create \
   --account-name $STORAGE_ACCOUNT \
@@ -168,8 +170,9 @@ az storage account local-user create \
 
 ```
 
-```jsx
 **# Create User B - resource-name is CONTAINER only**
+```jsx
+
 
 az storage account local-user create \
   --account-name $STORAGE_ACCOUNT \
