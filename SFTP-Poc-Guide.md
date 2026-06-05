@@ -312,7 +312,7 @@ az storage fs access set \
   --path "/userB-home" \
   --file-system $CONTAINER \
   --account-name $STORAGE_ACCOUNT \
-  --auth-mode login`
+  --auth-mode login
 
 ```
 ---
